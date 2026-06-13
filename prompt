@@ -1,0 +1,144 @@
+Build a pilot experiment to test whether GPT-4-class LLM agents exhibit the 
+committed-minority tipping behavior predicted by the following theorem:
+
+  THEOREM: In a population of agents updating their interpretation of a 
+  capability marker based on task-success feedback, with a committed minority 
+  of size α pushing interpretation t_1 against a majority initially using t_0:
+  
+    - If q_1 >= q_0: any α > 0 eventually flips the population to t_1
+    - If q_1 < q_0:  there is a threshold α* = 1 - q_1/q_0
+        - For α < α*: population reaches partial-mixture x* = α q_1 / [(1-α)(q_0 - q_1)]
+        - For α > α*: population fully converts to t_1
+
+where x is the fraction of the (non-committed) majority that has adopted t_1.
+
+EXPERIMENTAL SETUP:
+
+The marker is "summarize". Two interpretations:
+  - t_0 = "extract the three most important sentences verbatim"
+  - t_1 = "produce a one-paragraph paraphrased summary"
+
+Task: each round an agent receives a short news article (use a small corpus, 
+~30 articles from any public dataset like CNN/DailyMail snippets, or generate 
+synthetic ones via GPT). The agent applies its current interpretation to 
+produce output.
+
+Success scoring: a separate GPT-4 "judge" call rates whether the output is 
+useful for a specific downstream task that you fix per-experiment. The 
+downstream task determines q_0 vs q_1:
+  - If the downstream task is "I need to quote the article exactly" → 
+    extractive (t_0) wins, e.g. q_0 ≈ 0.85, q_1 ≈ 0.35
+  - If the downstream task is "I need a quick gist for a busy executive" → 
+    paraphrastic (t_1) wins, e.g. q_0 ≈ 0.40, q_1 ≈ 0.80
+
+Calibrate q_0 and q_1 empirically first (Step 1 below) so the theory 
+prediction uses measured values, not assumed ones.
+
+AGENT POPULATION:
+
+  - N = 20 agents total (keep small for cost; we can scale later)
+  - Each agent has a "current interpretation" state: either t_0 or t_1
+  - Committed minority: α·N agents are locked at t_1 via system prompt 
+    instruction they cannot revise
+  - Majority: (1-α)·N agents start at t_0, can update
+
+INTERACTION DYNAMICS (one round):
+
+  1. Sample a random pair (i, j) from the population
+  2. Sample an article from the corpus
+  3. Agent i (the "actor") applies its current interpretation to the article
+  4. The judge scores the output against the fixed downstream task → success ∈ {0,1}
+  5. Agent j (the "observer") sees: 
+       (a) which interpretation agent i used
+       (b) the output
+       (c) the success signal
+  6. If j is in the majority (not committed): query GPT to decide whether j 
+     updates its interpretation. Prompt j with its current belief, the 
+     observed interaction, and ask: "Based on this, should you change your 
+     interpretation of 'summarize'? Reply only YES or NO."
+     If YES: j adopts i's interpretation.
+
+Run T = 500 rounds per experimental condition.
+
+EXPERIMENTAL CONDITIONS:
+
+Run a full sweep:
+  - q regime: one harmful-minority condition (q_0=0.85, q_1=0.35 — extractive 
+    task) and one useful-minority condition (q_0=0.40, q_1=0.80 — gist task)
+  - α values: [0.0, 0.05, 0.1, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.65, 0.80]
+  - 3 random seeds per (regime, α) combination
+
+That's 2 × 11 × 3 = 66 runs. Each run = 500 rounds. Each round = ~3-5 GPT 
+calls (actor output, judge, observer update decision). Use gpt-4o or 
+gpt-4o-mini for cost; mini is fine for the actor and observer, use full 
+gpt-4o for the judge to keep scoring consistent.
+
+MEASUREMENTS:
+
+For each run, record per round:
+  - x_t = fraction of majority currently at t_1
+  - success rates of each interpretation (rolling)
+  - any switch events
+
+Compute per-run steady state x_∞ as mean of last 100 rounds.
+
+OUTPUT:
+
+Produce four plots and a summary:
+
+  1. Calibration plot: measured q_0, q_1 per regime (with confidence intervals 
+     from the first 50 rounds before any switching dominates). Confirms what 
+     the actual success ratios are.
+  
+  2. Trajectory plot: x_t vs round, one curve per α, faceted by regime. Shows 
+     dynamics.
+  
+  3. THE MONEY PLOT: x_∞ vs α, separately for each regime. Overlay the 
+     theoretical prediction:
+         x*(α) = α q_1 / [(1-α)(q_0 - q_1)]   for α < α*
+         x*(α) = 1                              for α >= α*
+     using the *measured* q_0, q_1 from step 1.
+     
+  4. Threshold plot: estimate empirical α* from each regime (where x_∞ first 
+     exceeds 0.95), compare to predicted α* = 1 - q_1/q_0.
+
+Summary stats: for each regime, report (predicted α*, empirical α*, RMSE 
+between predicted and observed x_∞ curve).
+
+IMPLEMENTATION NOTES:
+
+  - Use the OpenAI Python SDK with async/concurrent requests for speed
+  - Cache all GPT calls keyed by (prompt_hash) to disk so reruns are free
+  - Budget warning: estimate ~50k-100k GPT calls total. With gpt-4o-mini at 
+    $0.15/1M input, $0.60/1M output, and short prompts, total cost should be 
+    under $30. Print running cost estimate at the start and ask me to confirm.
+  - Set a hard request budget cap (e.g., 200k calls) that aborts if exceeded
+  - Save all raw data (every round, every call) to JSONL so we can re-analyze 
+    without re-running
+  - Use a fixed random seed offset per condition for reproducibility
+  - Make the framework agnostic to the specific marker/interpretations so we 
+    can rerun with different setups
+
+ROBUSTNESS CHECKS to run if main result looks good:
+
+  - Vary the prompt phrasing for the observer-update step (3 alternatives) to 
+    check sensitivity
+  - Try N=10 and N=40 to check sample-size effects
+  - Try a "weakly committed" minority (system prompt is suggestive not 
+    absolute) to see how leakage affects threshold
+
+DELIVERABLES:
+
+  - experiment.py: the main runner
+  - analysis.py: produces the plots from saved JSONL
+  - results/ directory with all JSONL traces and the four plots
+  - REPORT.md with: measured q values, predicted vs empirical α*, fit quality, 
+    surprises, and a short discussion of which of the 10 known risk factors 
+    (priors, observation noise, graph structure, continuous adoption, finite 
+    memory, endogenous q, leaky commitment, multi-marker, proxy rewards, 
+    non-Bayesian updates) appear to be biting based on the data
+
+START by writing the calibration script and showing me 20 sample (article, 
+interpretation, judge-score) triples so I can sanity-check that q_0 and q_1 
+are well-separated before we spend money on the full sweep. Don't run the 
+full sweep until I approve the calibration results.

@@ -1,0 +1,40 @@
+{
+  "models": {
+    "actor": "gpt-4o-mini",
+    "judge": "gpt-4o",
+    "observer": "gpt-4o-mini"
+  },
+  "n_articles": 30,
+  "regimes": {
+    "extractive": {
+      "q0_t0": 0.26666666666666666,
+      "q1_t1": 0.03333333333333333,
+      "q0_ci": [
+        0.10842147482583778,
+        0.4249118585074956
+      ],
+      "q1_ci": [
+        0.0,
+        0.09756854924301145
+      ],
+      "predicted_alpha_star": 0.875,
+      "minority_is_useful": false
+    },
+    "gist": {
+      "q0_t0": 0.5,
+      "q1_t1": 0.9,
+      "q0_ci": [
+        0.32107729788164574,
+        0.6789227021183543
+      ],
+      "q1_ci": [
+        0.7926463787289875,
+        1.0
+      ],
+      "predicted_alpha_star": 0.0,
+      "minority_is_useful": true
+    }
+  },
+  "cost_so_far_usd": 0.0699,
+  "calls": 180
+}

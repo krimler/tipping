@@ -1,0 +1,4 @@
+openai==2.36.0
+numpy==2.4.4
+matplotlib==3.10.9
+tqdm==4.67.3
