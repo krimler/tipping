@@ -93,28 +93,37 @@ def plot_trajectories(sweep, N=20):
     fig, axes = plt.subplots(len(regimes), len(OBSERVERS),
                              figsize=(5 * len(OBSERVERS), 4 * len(regimes)),
                              sharex=True, sharey=True)
+
+    # Collect all valid alphas across all panels for a shared colormap scale
+    valid_alphas = sorted({a for obs in OBSERVERS for regime in regimes
+                           for a in sweep[obs][regime].keys()
+                           if not is_no_majority(a, N)})
+    norm = plt.Normalize(vmin=min(valid_alphas), vmax=max(valid_alphas))
+    cmap = plt.cm.viridis
+
     for r_i, regime in enumerate(regimes):
         for c_i, obs in enumerate(OBSERVERS):
             ax = axes[r_i, c_i]
-            alphas = sorted(sweep[obs][regime].keys())
-            cmap = plt.cm.viridis(np.linspace(0, 1, len(alphas)))
-            for color, a in zip(cmap, alphas):
+            for a in sorted(sweep[obs][regime].keys()):
                 if is_no_majority(a, N):
                     continue
                 stack = np.array([np.array(xs) for (_, xs) in sweep[obs][regime][a]])
-                ax.plot(stack.mean(axis=0), color=color, linewidth=1, label=f"α={a:.2f}")
-            ax.set_title(f"{regime} | observer={obs}")
+                ax.plot(stack.mean(axis=0), color=cmap(norm(a)), linewidth=1)
+            ax.set_title(f"{regime} | {obs}")
             ax.set_ylim(-0.02, 1.02)
             if r_i == len(regimes) - 1:
                 ax.set_xlabel("round")
             if c_i == 0:
-                ax.set_ylabel("x_t (frac of majority at t1)")
-    # one shared legend below
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8,
-               bbox_to_anchor=(0.5, -0.02))
+                ax.set_ylabel(r"$x_t$ (fraction of majority at $t_1$)")
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=axes.ravel().tolist(), orientation="vertical",
+                        fraction=0.02, pad=0.03)
+    cbar.set_label("committed-minority fraction α", fontsize=9)
+
     fig.suptitle("Plot 2 — Per-round trajectories (mean over 3 seeds)")
-    fig.tight_layout(rect=[0, 0.06, 1, 0.96])
+    fig.tight_layout(rect=[0, 0, 0.95, 0.96])
     fig.savefig(PLOTS / "2_trajectories.png", dpi=140, bbox_inches="tight")
     plt.close(fig)
 
